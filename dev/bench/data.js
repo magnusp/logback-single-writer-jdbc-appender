@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1789151090968,
+  "lastUpdate": 1789151174723,
   "repoUrl": "https://github.com/magnusp/logback-single-writer-jdbc-appender",
   "entries": {
     "JMH Benchmarks (SQLite Appender)": [
@@ -118,6 +118,36 @@ window.BENCHMARK_DATA = {
           {
             "name": "com.github.magnusp.logback.resilientjdbc.ResilientJdbcAppenderBenchmark.benchmarkAppend",
             "value": 32044412.602880746,
+            "unit": "ops/s",
+            "extra": "iterations: 3\nforks: 1\nthreads: 1"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "1431685+magnusp@users.noreply.github.com",
+            "name": "Magnus Persson",
+            "username": "magnusp"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "da51c84b4f66b33cdb1a8861090444ab5c397fef",
+          "message": "ci: set comment-always: true so benchmark comparison tables are posted on every PR (#18)",
+          "timestamp": "2026-09-11T20:25:35+02:00",
+          "tree_id": "2372b2fbafbd90174cf0b3868844687760f21198",
+          "url": "https://github.com/magnusp/logback-single-writer-jdbc-appender/commit/da51c84b4f66b33cdb1a8861090444ab5c397fef"
+        },
+        "date": 1789151174007,
+        "tool": "jmh",
+        "benches": [
+          {
+            "name": "com.github.magnusp.logback.resilientjdbc.ResilientJdbcAppenderBenchmark.benchmarkAppend",
+            "value": 51419654.299286395,
             "unit": "ops/s",
             "extra": "iterations: 3\nforks: 1\nthreads: 1"
           }
