@@ -19,8 +19,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * High-performance, resilient Logback appender that writes log events to a JDBC DataSource (such as Turso/SQLite)
- * using a single background worker thread, batching, and backoff under failure.
+ * High-performance, resilient Logback appender that writes log events to a single-writer JDBC DataSource
+ * (such as SQLite or embedded relational databases) using a single background worker thread,
+ * transactional batching, and backoff under failure.
  */
 public class ResilientJdbcAppender extends AppenderBase<ILoggingEvent> {
 
@@ -73,7 +74,7 @@ public class ResilientJdbcAppender extends AppenderBase<ILoggingEvent> {
                     return;
                 }
             } else {
-                eventSqlBinder = new DefaultTursoEventSqlBinder();
+                eventSqlBinder = new DefaultSqliteEventSqlBinder();
             }
         }
 

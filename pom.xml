@@ -10,7 +10,7 @@
     <packaging>jar</packaging>
 
     <name>Logback Single Writer JDBC Appender</name>
-    <description>Resilient, asynchronous batching JDBC and Turso appender for Logback</description>
+    <description>Resilient, asynchronous batching single-writer JDBC and SQLite appender for Logback</description>
     <url>https://github.com/magnusp/logback-single-writer-jdbc-appender</url>
 
     <licenses>

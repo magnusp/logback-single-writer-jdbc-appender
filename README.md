@@ -1,14 +1,15 @@
 # logback-single-writer-jdbc-appender
 
-A resilient, single-background-writer JDBC appender for [Logback](https://logback.qos.ch/) built for high throughput, zero caller thread blocking, backoff on outages, and drop protection, designed specifically for Turso and SQLite-backed systems.
+A resilient, single-background-writer JDBC appender for [Logback](https://logback.qos.ch/) built for high throughput, zero caller thread blocking, backoff on outages, and drop protection, designed specifically for SQLite and single-writer JDBC databases.
 
 ## Features
 
+- **Single-Writer Safety**: Uses a dedicated single background thread to process writes sequentially, perfectly matched for SQLite and embedded single-writer database engines.
 - **Non-blocking Appends**: Log events are offered to a bounded `ArrayBlockingQueue`. Application threads never block on database writes.
-- **Batching & Auto-commit Handling**: Batches logs within transactions (`PreparedStatement.executeBatch()`) periodically or whenever `maxBufferSize` threshold is hit.
-- **Resilience & Backoff**: Exponential backoff on database or network errors without crashing or starving caller threads.
-- **Priority-based Dropping**: Preserves critical `WARN` and `ERROR` logs by automatically shedding low-priority (`DEBUG`, `INFO`) logs during prolonged outages.
-- **Pluggable EventSqlBinder**: Customize SQL schema and prepared statement parameter bindings via [`EventSqlBinder`](file:///home/magnus/src/github.com/magnusp/logback-single-writer-jdbc-appender/src/main/java/com/github/magnusp/logback/resilientjdbc/EventSqlBinder.java). Default schema provided by [`DefaultTursoEventSqlBinder`](file:///home/magnus/src/github.com/magnusp/logback-single-writer-jdbc-appender/src/main/java/com/github/magnusp/logback/resilientjdbc/DefaultTursoEventSqlBinder.java).
+- **Transactional Batching**: Batches log events within transactions (`PreparedStatement.executeBatch()`) periodically or whenever `maxBufferSize` threshold is hit.
+- **Resilience & Backoff**: Exponential backoff on database locking, contention, or network errors without crashing or starving caller threads.
+- **Priority-based Dropping**: Preserves critical `WARN` and `ERROR` logs by automatically shedding low-priority (`DEBUG`, `INFO`) logs during prolonged outages or write contention storms.
+- **Pluggable EventSqlBinder**: Customize SQL schema and prepared statement parameter bindings via [`EventSqlBinder`](file:///home/magnus/src/github.com/magnusp/logback-single-writer-jdbc-appender/src/main/java/com/github/magnusp/logback/resilientjdbc/EventSqlBinder.java). Default schema provided by [`DefaultSqliteEventSqlBinder`](file:///home/magnus/src/github.com/magnusp/logback-single-writer-jdbc-appender/src/main/java/com/github/magnusp/logback/resilientjdbc/DefaultSqliteEventSqlBinder.java).
 - **Decoupled Spring Boot / Framework Integration**: Safe against startup ordering issues using [`DataSourceRegistry`](file:///home/magnus/src/github.com/magnusp/logback-single-writer-jdbc-appender/src/main/java/com/github/magnusp/logback/resilientjdbc/DataSourceRegistry.java). Events are buffered safely until the `DataSource` bean finishes initializing.
 
 ---
@@ -35,7 +36,7 @@ public class LoggingDataSourceConfig {
 
     @EventListener(ApplicationReadyEvent.class)
     public void onApplicationReady() {
-        DataSourceRegistry.register("tursoDataSource", dataSource);
+        DataSourceRegistry.register("loggingDataSource", dataSource);
     }
 }
 ```
@@ -44,8 +45,8 @@ public class LoggingDataSourceConfig {
 
 ```xml
 <configuration>
-    <appender name="TURSO_JDBC" class="com.github.magnusp.logback.resilientjdbc.ResilientJdbcAppender">
-        <dataSourceName>tursoDataSource</dataSourceName>
+    <appender name="RESILIENT_JDBC" class="com.github.magnusp.logback.resilientjdbc.ResilientJdbcAppender">
+        <dataSourceName>loggingDataSource</dataSourceName>
         <maxBufferSize>100</maxBufferSize>
         <flushIntervalSeconds>5</flushIntervalSeconds>
         <queueCapacity>10000</queueCapacity>
@@ -53,7 +54,7 @@ public class LoggingDataSourceConfig {
     </appender>
 
     <root level="INFO">
-        <appender-ref ref="TURSO_JDBC" />
+        <appender-ref ref="RESILIENT_JDBC" />
     </root>
 </configuration>
 ```
@@ -74,7 +75,7 @@ mvn test -Pbenchmark
 
 ## Benchmarks & Baseline
 
-JMH benchmarks run deterministically against a temporary SQLite database configured with WAL journal mode. Benchmarks are tracked across PRs and main branches automatically via GitHub Actions.
+JMH benchmarks run deterministically against an isolated SQLite database configured with WAL journal mode. Benchmarks are tracked across PRs and main branches automatically via GitHub Actions.
 
 ---
 
