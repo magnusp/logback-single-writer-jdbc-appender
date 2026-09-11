@@ -109,8 +109,8 @@ public class ResilientJdbcAppender extends AppenderBase<ILoggingEvent> {
             return;
         }
 
-        // 4. Batch size trigger
-        if (buffer.size() >= maxBufferSize) {
+        // 4. Batch size trigger: only submit flush if not already actively flushing
+        if (buffer.size() >= maxBufferSize && !isFlushing.get()) {
             scheduler.submit(this::asyncFlush);
         }
     }
@@ -121,32 +121,44 @@ public class ResilientJdbcAppender extends AppenderBase<ILoggingEvent> {
         }
 
         try {
-            if (buffer.isEmpty()) return;
+            // Drain in batches of maxBufferSize until the buffer is empty
+            // or an active retry storm halts processing
+            while (!buffer.isEmpty() && isStarted()) {
+                List<ILoggingEvent> batch = new ArrayList<>(maxBufferSize);
+                buffer.drainTo(batch, maxBufferSize);
 
-            List<ILoggingEvent> batch = new ArrayList<>(maxBufferSize);
-            buffer.drainTo(batch, maxBufferSize);
+                if (batch.isEmpty()) {
+                    break;
+                }
 
-            if (discardLowPriorityOnStorm && isInRetryStorm.get()) {
-                int beforeSize = batch.size();
-                batch.removeIf(this::isLowPriority);
-                droppedEventsCount.addAndGet(beforeSize - batch.size());
-            }
+                if (discardLowPriorityOnStorm && isInRetryStorm.get()) {
+                    int beforeSize = batch.size();
+                    batch.removeIf(this::isLowPriority);
+                    droppedEventsCount.addAndGet(beforeSize - batch.size());
+                }
 
-            if (!batch.isEmpty()) {
-                sendWithRetry(batch);
+                if (!batch.isEmpty()) {
+                    boolean success = sendWithRetry(batch);
+                    // If send failed or thread was interrupted, stop draining further batches for this cycle
+                    if (!success) {
+                        break;
+                    }
+                }
             }
         } finally {
             isFlushing.set(false);
         }
     }
 
-    private void sendWithRetry(List<ILoggingEvent> batch) {
+    private boolean sendWithRetry(List<ILoggingEvent> batch) {
         while (isStarted() && !batch.isEmpty()) {
             DataSource ds = resolveDataSource();
             if (ds == null) {
                 // DataSource not yet registered (e.g. during Spring boot initialization)
                 isInRetryStorm.set(true);
-                handleBackoff(batch, "DataSource not available yet for: " + dataSourceName);
+                if (!handleBackoff(batch, "DataSource not available yet for: " + dataSourceName)) {
+                    return false;
+                }
                 continue;
             }
 
@@ -191,16 +203,19 @@ public class ResilientJdbcAppender extends AppenderBase<ILoggingEvent> {
                     addInfo("Connection restored. Normal operations resumed.");
                 }
                 currentDelayMs = initialDelayMs;
-                return;
+                return true;
 
             } catch (Exception e) {
                 isInRetryStorm.set(true);
-                handleBackoff(batch, "JDBC write failed: " + e.getMessage());
+                if (!handleBackoff(batch, "JDBC write failed: " + e.getMessage())) {
+                    return false;
+                }
             }
         }
+        return false;
     }
 
-    private void handleBackoff(List<ILoggingEvent> batch, String warningMessage) {
+    private boolean handleBackoff(List<ILoggingEvent> batch, String warningMessage) {
         addWarn(warningMessage + ". Entering backoff (" + currentDelayMs + "ms).");
 
         if (discardLowPriorityOnStorm) {
@@ -213,10 +228,11 @@ public class ResilientJdbcAppender extends AppenderBase<ILoggingEvent> {
             Thread.sleep(currentDelayMs);
         } catch (InterruptedException ie) {
             Thread.currentThread().interrupt();
-            return;
+            return false;
         }
 
         currentDelayMs = Math.min(currentDelayMs * 2, maxDelayMs);
+        return true;
     }
 
     private DataSource resolveDataSource() {
@@ -247,6 +263,18 @@ public class ResilientJdbcAppender extends AppenderBase<ILoggingEvent> {
                 Thread.currentThread().interrupt();
             }
         }
+
+        // Wait up to 2 seconds for any active in-flight flush loop to finish cleanly
+        long waitDeadline = System.currentTimeMillis() + 2000;
+        while (isFlushing.get() && System.currentTimeMillis() < waitDeadline) {
+            try {
+                Thread.sleep(50);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+
         downstreamFlushOnShutdown();
     }
 
