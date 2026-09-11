@@ -28,10 +28,23 @@ jobs:
       - name: Run Tests
         run: mvn --batch-mode clean test
 
+      - name: Check for Benchmark Code
+        id: check_benchmarks
+        run: |
+          if [ -d "src/benchmarks/java" ] && [ -n "$(find src/benchmarks/java -name '*Benchmark*.java' 2>/dev/null)" ]; then
+            echo "has_benchmarks=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_benchmarks=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Run JMH Benchmarks
-        run: mvn --batch-mode test -Pbenchmark
+        if: steps.check_benchmarks.outputs.has_benchmarks == 'true'
+        run: |
+          mkdir -p target
+          mvn --batch-mode test -Pbenchmark
 
       - name: Store / Compare Benchmark Result
+        if: steps.check_benchmarks.outputs.has_benchmarks == 'true'
         uses: benchmark-action/github-action-benchmark@v1
         with:
           name: JMH Benchmarks (SQLite Appender)
