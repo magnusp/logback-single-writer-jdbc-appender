@@ -48,7 +48,12 @@ public class ResilientJdbcAppender extends AppenderBase<ILoggingEvent> {
     private boolean discardLowPriorityOnStorm = true;
 
     private ScheduledExecutorService scheduler;
+    private volatile Thread flusherThread;
     private boolean initializedSchema = false;
+
+    // Rate-limiting status warnings to prevent log storms
+    private static final long WARN_THROTTLE_INTERVAL_MS = 2000;
+    private final AtomicLong lastWarnTimestamp = new AtomicLong(0);
 
     @Override
     public void start() {
@@ -119,6 +124,7 @@ public class ResilientJdbcAppender extends AppenderBase<ILoggingEvent> {
         if (!isFlushing.compareAndSet(false, true)) {
             return;
         }
+        flusherThread = Thread.currentThread();
 
         try {
             // Drain in batches of maxBufferSize until the buffer is empty
@@ -146,6 +152,7 @@ public class ResilientJdbcAppender extends AppenderBase<ILoggingEvent> {
                 }
             }
         } finally {
+            flusherThread = null;
             isFlushing.set(false);
         }
     }
@@ -169,84 +176,102 @@ public class ResilientJdbcAppender extends AppenderBase<ILoggingEvent> {
      * already been reduced to a single event; on failure it is silently discarded.
      */
     private boolean sendBatch(List<ILoggingEvent> batch, boolean isBisectedSingle) {
-        if (!isStarted() || batch.isEmpty()) {
-            return true; // nothing to do, keep the flush loop alive
-        }
-
-        DataSource ds = resolveDataSource();
-        if (ds == null) {
-            isInRetryStorm.set(true);
-            // No bisection for missing DataSource — back off and retry the whole batch
-            return handleBackoff(batch, "DataSource not available yet for: " + dataSourceName);
-        }
-
-        try (Connection conn = ds.getConnection()) {
-            if (!initializedSchema) {
-                try {
-                    eventSqlBinder.init(conn);
-                    initializedSchema = true;
-                } catch (SQLException e) {
-                    addWarn("Schema init failed: " + e.getMessage(), e);
+        while (isStarted() && !batch.isEmpty()) {
+            DataSource ds = resolveDataSource();
+            if (ds == null) {
+                isInRetryStorm.set(true);
+                // No bisection for missing DataSource — back off and retry the whole batch
+                if (!handleBackoff(batch, "DataSource not available yet for: " + dataSourceName)) {
+                    return false;
                 }
+                continue;
             }
 
-            boolean origAutoCommit = conn.getAutoCommit();
-            conn.setAutoCommit(false);
-            try {
-                String sql = eventSqlBinder.getInsertSql();
-                try (PreparedStatement ps = conn.prepareStatement(sql)) {
-                    for (ILoggingEvent event : batch) {
-                        eventSqlBinder.bind(ps, event);
-                        ps.addBatch();
+            try (Connection conn = ds.getConnection()) {
+                if (!initializedSchema) {
+                    try {
+                        eventSqlBinder.init(conn);
+                        initializedSchema = true;
+                    } catch (SQLException e) {
+                        addWarn("Schema init failed: " + e.getMessage(), e);
                     }
-                    ps.executeBatch();
                 }
-                conn.commit();
+
+                boolean origAutoCommit = conn.getAutoCommit();
+                conn.setAutoCommit(false);
+                try {
+                    String sql = eventSqlBinder.getInsertSql();
+                    try (PreparedStatement ps = conn.prepareStatement(sql)) {
+                        for (ILoggingEvent event : batch) {
+                            eventSqlBinder.bind(ps, event);
+                            ps.addBatch();
+                        }
+                        ps.executeBatch();
+                    }
+                    conn.commit();
+                } catch (Exception e) {
+                    try {
+                        conn.rollback();
+                    } catch (SQLException rollbackEx) {
+                        addWarn("Rollback failed: " + rollbackEx.getMessage());
+                    }
+                    throw e;
+                } finally {
+                    try {
+                        conn.setAutoCommit(origAutoCommit);
+                    } catch (SQLException ignored) {}
+                }
+
+                // Batch write succeeded
+                insertedEventsCount.addAndGet(batch.size());
+                if (isInRetryStorm.getAndSet(false)) {
+                    addInfo("Connection restored. Normal operations resumed.");
+                }
+                currentDelayMs = initialDelayMs;
+                return true;
+
             } catch (Exception e) {
-                try {
-                    conn.rollback();
-                } catch (SQLException rollbackEx) {
-                    addWarn("Rollback failed: " + rollbackEx.getMessage());
+                isInRetryStorm.set(true);
+
+                // If interrupted or appender stopped, don't bisect or retry; exit cleanly
+                if (Thread.currentThread().isInterrupted() || !isStarted()) {
+                    return false;
                 }
-                throw e;
-            } finally {
-                try {
-                    conn.setAutoCommit(origAutoCommit);
-                } catch (SQLException ignored) {}
-            }
 
-            // Batch write succeeded
-            insertedEventsCount.addAndGet(batch.size());
-            if (isInRetryStorm.getAndSet(false)) {
-                addInfo("Connection restored. Normal operations resumed.");
-            }
-            currentDelayMs = initialDelayMs;
-            return true;
+                // Distinguish transient connection/pool/database errors (e.g. database locked/busy, connection refused)
+                // vs data/payload errors (e.g. data too long, constraint violation, malformed data).
+                // Transient database/connection errors affect the whole database and should back off without discarding.
+                boolean isTransientError = isTransientDatabaseError(e);
 
-        } catch (Exception e) {
-            isInRetryStorm.set(true);
+                if (isTransientError) {
+                    logThrottledWarn("Transient database error (" + e.getMessage() + "). Backing off without discarding.");
+                    if (!handleBackoff(batch, "Transient database error")) {
+                        return false;
+                    }
+                    continue; // retry the same batch
+                }
 
             if (isBisectedSingle) {
-                // This is already a single isolated event — discard it as a poison pill
+                // This is already a single isolated event that failed twice — discard it as a poison pill
                 droppedEventsCount.incrementAndGet();
-                addWarn("Discarding unwritable log event after bisection: logger=" +
+                logThrottledWarn("Discarding unwritable log event after bisection: logger=" +
                         batch.get(0).getLoggerName() + " msg=" + batch.get(0).getMessage() +
                         " error=" + e.getMessage());
-                return isStarted(); // keep flush loop alive; event is gone
+                return isStarted(); // keep flush loop alive; event is discarded
             }
 
             if (batch.size() == 1) {
                 // Single event failed for the first time — attempt one transient backoff,
                 // then discard if it still fails on the recursive call
-                addWarn("Single-event write failed, backing off before discard attempt: " + e.getMessage());
+                logThrottledWarn("Single-event write failed, backing off before discard attempt: " + e.getMessage());
                 if (!handleBackoffSilent()) {
                     return false; // interrupted
                 }
                 return sendBatch(batch, true);
             }
 
-            // Multi-event batch failure: bisect and retry each half in order
-            addWarn("Batch of " + batch.size() + " failed, bisecting: " + e.getMessage());
+            // Multi-event payload failure: bisect and retry each half in order
+            logThrottledWarn("Batch of " + batch.size() + " failed, bisecting: " + e.getMessage());
             int mid = batch.size() / 2;
             List<ILoggingEvent> first = new ArrayList<>(batch.subList(0, mid));
             List<ILoggingEvent> second = new ArrayList<>(batch.subList(mid, batch.size()));
@@ -270,6 +295,42 @@ public class ResilientJdbcAppender extends AppenderBase<ILoggingEvent> {
                 return false;
             }
             return isStarted();
+        }
+        }
+        return false;
+    }
+
+    /**
+     * Determines if an exception represents a transient database or connectivity failure
+     * (e.g., locked database, busy handler, connection unavailable) where events should NOT be discarded.
+     */
+    private boolean isTransientDatabaseError(Throwable t) {
+        Throwable curr = t;
+        while (curr != null) {
+            String msg = curr.getMessage();
+            if (msg != null) {
+                String lower = msg.toLowerCase();
+                if (lower.contains("busy") || lower.contains("locked") ||
+                    lower.contains("connection") || lower.contains("timeout") ||
+                    lower.contains("pool") || lower.contains("io error") ||
+                    lower.contains("sqlite_busy") || lower.contains("sqlite_locked")) {
+                    return true;
+                }
+            }
+            curr = curr.getCause();
+        }
+        return false;
+    }
+
+    /**
+     * Throttles logback status warnings to at most one per {@link #WARN_THROTTLE_INTERVAL_MS}
+     * to avoid recursive storms or flooding when logging errors occur frequently.
+     */
+    private void logThrottledWarn(String message) {
+        long now = System.currentTimeMillis();
+        long last = lastWarnTimestamp.get();
+        if (now - last >= WARN_THROTTLE_INTERVAL_MS && lastWarnTimestamp.compareAndSet(last, now)) {
+            addWarn(message);
         }
     }
 
@@ -298,7 +359,7 @@ public class ResilientJdbcAppender extends AppenderBase<ILoggingEvent> {
      * @return {@code false} if the thread was interrupted
      */
     private boolean handleBackoff(List<ILoggingEvent> batch, String warningMessage) {
-        addWarn(warningMessage + ". Entering backoff (" + currentDelayMs + "ms).");
+        logThrottledWarn(warningMessage + ". Entering backoff (" + currentDelayMs + "ms).");
 
         if (discardLowPriorityOnStorm) {
             int beforeSize = batch.size();
@@ -329,7 +390,7 @@ public class ResilientJdbcAppender extends AppenderBase<ILoggingEvent> {
         if (scheduler != null) {
             scheduler.shutdown();
             try {
-                if (!scheduler.awaitTermination(3, TimeUnit.SECONDS)) {
+                if (!scheduler.awaitTermination(1, TimeUnit.SECONDS)) {
                     scheduler.shutdownNow();
                 }
             } catch (InterruptedException e) {
@@ -339,8 +400,6 @@ public class ResilientJdbcAppender extends AppenderBase<ILoggingEvent> {
         }
 
         // Wait up to 2 seconds for any active in-flight flush loop to finish cleanly.
-        // If the background flusher is still holding the lock after the deadline, we
-        // skip the downstream flush to avoid a concurrent write (single-writer invariant).
         long waitDeadline = System.currentTimeMillis() + 2000;
         while (isFlushing.get() && System.currentTimeMillis() < waitDeadline) {
             try {
@@ -348,6 +407,18 @@ public class ResilientJdbcAppender extends AppenderBase<ILoggingEvent> {
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 break;
+            }
+        }
+
+        // If the flusher thread is still busy (e.g. stuck sleeping in retry backoff), interrupt it
+        // so it exits promptly and releases the isFlushing lock.
+        Thread activeFlusher = flusherThread;
+        if (isFlushing.get() && activeFlusher != null && activeFlusher.isAlive()) {
+            activeFlusher.interrupt();
+            try {
+                activeFlusher.join(500);
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
             }
         }
 
