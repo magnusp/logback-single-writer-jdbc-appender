@@ -9,7 +9,9 @@ A resilient, single-background-writer JDBC appender for [Logback](https://logbac
 - **Transactional Batching**: Batches log events within transactions (`PreparedStatement.executeBatch()`) periodically or whenever `maxBufferSize` threshold is hit.
 - **Resilience & Backoff**: Exponential backoff on database locking, contention, or network errors without crashing or starving caller threads.
 - **Priority-based Dropping**: Preserves critical `WARN` and `ERROR` logs by automatically shedding low-priority (`DEBUG`, `INFO`) logs during prolonged outages or write contention storms.
-- **Pluggable EventSqlBinder**: Customize SQL schema and prepared statement parameter bindings via [`EventSqlBinder`](file:///home/magnus/src/github.com/magnusp/logback-single-writer-jdbc-appender/src/main/java/com/github/magnusp/logback/resilientjdbc/EventSqlBinder.java). Default schema provided by [`DefaultSqliteEventSqlBinder`](file:///home/magnus/src/github.com/magnusp/logback-single-writer-jdbc-appender/src/main/java/com/github/magnusp/logback/resilientjdbc/DefaultSqliteEventSqlBinder.java).
+- **Pluggable EventSqlBinder**: Customize SQL schema and prepared statement parameter bindings via [`EventSqlBinder`](file:///home/magnus/src/github.com/magnusp/logback-single-writer-jdbc-appender/src/main/java/com/github/magnusp/logback/resilientjdbc/EventSqlBinder.java).
+  - [`DefaultSqliteEventSqlBinder`](file:///home/magnus/src/github.com/magnusp/logback-single-writer-jdbc-appender/src/main/java/com/github/magnusp/logback/resilientjdbc/DefaultSqliteEventSqlBinder.java): Traditional relational schema (`timestamp`, `level`, `logger_name`, `thread_name`, `message`, `exception`, `mdc`).
+  - [`JsonColumnEventSqlBinder`](file:///home/magnus/src/github.com/magnusp/logback-single-writer-jdbc-appender/src/main/java/com/github/magnusp/logback/resilientjdbc/JsonColumnEventSqlBinder.java): JSON-oriented schema (`timestamp`, `level`, `data JSON`) leveraging SQLite/LibSQL JSON1 operators (`json_extract()`, `->>`).
 - **Decoupled Spring Boot / Framework Integration**: Safe against startup ordering issues using [`DataSourceRegistry`](file:///home/magnus/src/github.com/magnusp/logback-single-writer-jdbc-appender/src/main/java/com/github/magnusp/logback/resilientjdbc/DataSourceRegistry.java). Events are buffered safely until the `DataSource` bean finishes initializing.
 
 ---
@@ -43,6 +45,7 @@ public class LoggingDataSourceConfig {
 
 ### 2. Configure `logback.xml`
 
+#### Standard Relational Table
 ```xml
 <configuration>
     <appender name="RESILIENT_JDBC" class="com.github.magnusp.logback.resilientjdbc.ResilientJdbcAppender">
@@ -55,6 +58,23 @@ public class LoggingDataSourceConfig {
 
     <root level="INFO">
         <appender-ref ref="RESILIENT_JDBC" />
+    </root>
+</configuration>
+```
+
+#### JSON Column Schema (SQLite / LibSQL JSON1)
+```xml
+<configuration>
+    <appender name="RESILIENT_JSON_JDBC" class="com.github.magnusp.logback.resilientjdbc.ResilientJdbcAppender">
+        <dataSourceName>loggingDataSource</dataSourceName>
+        <eventSqlBinderClassName>com.github.magnusp.logback.resilientjdbc.JsonColumnEventSqlBinder</eventSqlBinderClassName>
+        <maxBufferSize>100</maxBufferSize>
+        <flushIntervalSeconds>5</flushIntervalSeconds>
+        <queueCapacity>10000</queueCapacity>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="RESILIENT_JSON_JDBC" />
     </root>
 </configuration>
 ```
