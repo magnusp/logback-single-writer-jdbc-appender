@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1789153915741,
+  "lastUpdate": 1789154075298,
   "repoUrl": "https://github.com/magnusp/logback-single-writer-jdbc-appender",
   "entries": {
     "JMH Benchmarks (SQLite Appender)": [
@@ -292,6 +292,54 @@ window.BENCHMARK_DATA = {
           {
             "name": "com.github.magnusp.logback.resilientjdbc.ResilientJdbcAppenderBenchmark.sqliteRelationalBatchOf500",
             "value": 121291.72574472148,
+            "unit": "ops/s",
+            "extra": "iterations: 3\nforks: 1\nthreads: 1"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e92f5667a000991d00c7e0ba8c0228db3ab33a65",
+          "message": "build(deps): bump the minor-and-patch group with 8 updates (#22)\n\nBumps the minor-and-patch group with 8 updates:\n\n| Package | From | To |\n| --- | --- | --- |\n| [ch.qos.logback:logback-classic](https://github.com/qos-ch/logback) | `1.5.18` | `1.6.3` |\n| org.slf4j:slf4j-api | `2.0.17` | `2.0.19` |\n| [org.assertj:assertj-core](https://github.com/assertj/assertj) | `3.27.3` | `3.27.7` |\n| [org.xerial:sqlite-jdbc](https://github.com/xerial/sqlite-jdbc) | `3.49.1.0` | `3.53.4.0` |\n| [org.apache.maven.plugins:maven-compiler-plugin](https://github.com/apache/maven-compiler-plugin) | `3.14.0` | `3.16.0` |\n| [org.apache.maven.plugins:maven-surefire-plugin](https://github.com/apache/maven-surefire) | `3.5.2` | `3.6.0` |\n| [org.codehaus.mojo:build-helper-maven-plugin](https://github.com/mojohaus/build-helper-maven-plugin) | `3.6.0` | `3.6.1` |\n| [org.codehaus.mojo:exec-maven-plugin](https://github.com/mojohaus/exec-maven-plugin) | `3.5.0` | `3.6.3` |\n\n\nUpdates `ch.qos.logback:logback-classic` from 1.5.18 to 1.6.3\n- [Release notes](https://github.com/qos-ch/logback/releases)\n- [Commits](https://github.com/qos-ch/logback/compare/v_1.5.18...v_1.6.3)\n\nUpdates `org.slf4j:slf4j-api` from 2.0.17 to 2.0.19\n\nUpdates `org.assertj:assertj-core` from 3.27.3 to 3.27.7\n- [Release notes](https://github.com/assertj/assertj/releases)\n- [Commits](https://github.com/assertj/assertj/compare/assertj-build-3.27.3...assertj-build-3.27.7)\n\nUpdates `org.xerial:sqlite-jdbc` from 3.49.1.0 to 3.53.4.0\n- [Release notes](https://github.com/xerial/sqlite-jdbc/releases)\n- [Changelog](https://github.com/xerial/sqlite-jdbc/blob/master/CHANGELOG)\n- [Commits](https://github.com/xerial/sqlite-jdbc/compare/3.49.1.0...3.53.4.0)\n\nUpdates `org.apache.maven.plugins:maven-compiler-plugin` from 3.14.0 to 3.16.0\n- [Release notes](https://github.com/apache/maven-compiler-plugin/releases)\n- [Commits](https://github.com/apache/maven-compiler-plugin/compare/maven-compiler-plugin-3.14.0...maven-compiler-plugin-3.16.0)\n\nUpdates `org.apache.maven.plugins:maven-surefire-plugin` from 3.5.2 to 3.6.0\n- [Release notes](https://github.com/apache/maven-surefire/releases)\n- [Commits](https://github.com/apache/maven-surefire/compare/surefire-3.5.2...surefire-3.6.0)\n\nUpdates `org.codehaus.mojo:build-helper-maven-plugin` from 3.6.0 to 3.6.1\n- [Release notes](https://github.com/mojohaus/build-helper-maven-plugin/releases)\n- [Commits](https://github.com/mojohaus/build-helper-maven-plugin/compare/3.6.0...3.6.1)\n\nUpdates `org.codehaus.mojo:exec-maven-plugin` from 3.5.0 to 3.6.3\n- [Release notes](https://github.com/mojohaus/exec-maven-plugin/releases)\n- [Commits](https://github.com/mojohaus/exec-maven-plugin/compare/3.5.0...3.6.3)\n\n---\nupdated-dependencies:\n- dependency-name: ch.qos.logback:logback-classic\n  dependency-version: 1.6.3\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n  dependency-group: minor-and-patch\n- dependency-name: org.slf4j:slf4j-api\n  dependency-version: 2.0.19\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: minor-and-patch\n- dependency-name: org.assertj:assertj-core\n  dependency-version: 3.27.7\n  dependency-type: direct:development\n  update-type: version-update:semver-patch\n  dependency-group: minor-and-patch\n- dependency-name: org.xerial:sqlite-jdbc\n  dependency-version: 3.53.4.0\n  dependency-type: direct:development\n  update-type: version-update:semver-minor\n  dependency-group: minor-and-patch\n- dependency-name: org.apache.maven.plugins:maven-compiler-plugin\n  dependency-version: 3.16.0\n  dependency-type: direct:development\n  update-type: version-update:semver-minor\n  dependency-group: minor-and-patch\n- dependency-name: org.apache.maven.plugins:maven-surefire-plugin\n  dependency-version: 3.6.0\n  dependency-type: direct:development\n  update-type: version-update:semver-minor\n  dependency-group: minor-and-patch\n- dependency-name: org.codehaus.mojo:build-helper-maven-plugin\n  dependency-version: 3.6.1\n  dependency-type: direct:development\n  update-type: version-update:semver-patch\n  dependency-group: minor-and-patch\n- dependency-name: org.codehaus.mojo:exec-maven-plugin\n  dependency-version: 3.6.3\n  dependency-type: direct:development\n  update-type: version-update:semver-minor\n  dependency-group: minor-and-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+          "timestamp": "2026-09-11T19:13:22Z",
+          "tree_id": "007bdcb87ea1d5a3ffc63def5217e1c2592b20eb",
+          "url": "https://github.com/magnusp/logback-single-writer-jdbc-appender/commit/e92f5667a000991d00c7e0ba8c0228db3ab33a65"
+        },
+        "date": 1789154074326,
+        "tool": "jmh",
+        "benches": [
+          {
+            "name": "com.github.magnusp.logback.resilientjdbc.ResilientJdbcAppenderBenchmark.sqliteJsonBatchOf100",
+            "value": 214424.3477919236,
+            "unit": "ops/s",
+            "extra": "iterations: 3\nforks: 1\nthreads: 1"
+          },
+          {
+            "name": "com.github.magnusp.logback.resilientjdbc.ResilientJdbcAppenderBenchmark.sqliteJsonBatchOf500",
+            "value": 268829.35647778836,
+            "unit": "ops/s",
+            "extra": "iterations: 3\nforks: 1\nthreads: 1"
+          },
+          {
+            "name": "com.github.magnusp.logback.resilientjdbc.ResilientJdbcAppenderBenchmark.sqliteRelationalBatchOf100",
+            "value": 273992.0396225836,
+            "unit": "ops/s",
+            "extra": "iterations: 3\nforks: 1\nthreads: 1"
+          },
+          {
+            "name": "com.github.magnusp.logback.resilientjdbc.ResilientJdbcAppenderBenchmark.sqliteRelationalBatchOf500",
+            "value": 317351.81531089864,
             "unit": "ops/s",
             "extra": "iterations: 3\nforks: 1\nthreads: 1"
           }
