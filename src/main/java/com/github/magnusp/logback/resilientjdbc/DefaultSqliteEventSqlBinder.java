@@ -116,9 +116,34 @@ public class DefaultSqliteEventSqlBinder implements EventSqlBinder {
         return sb.toString();
     }
 
+    /**
+     * Escapes a string for embedding as a JSON string value (RFC-8259 compliant).
+     * Handles backslash, double-quote, control characters (U+0000–U+001F) and the
+     * mandatory named escapes (\b, \f, \n, \r, \t).
+     */
     private String escapeJson(String s) {
         if (s == null) return "";
-        return s.replace("\\", "\\\\").replace("\"", "\\\"");
+        StringBuilder sb = new StringBuilder(s.length() + 8);
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            switch (c) {
+                case '"'  -> sb.append("\\\"");
+                case '\\' -> sb.append("\\\\");
+                case '\b' -> sb.append("\\b");
+                case '\f' -> sb.append("\\f");
+                case '\n' -> sb.append("\\n");
+                case '\r' -> sb.append("\\r");
+                case '\t' -> sb.append("\\t");
+                default -> {
+                    if (c < 0x20) {
+                        sb.append(String.format("\\u%04x", (int) c));
+                    } else {
+                        sb.append(c);
+                    }
+                }
+            }
+        }
+        return sb.toString();
     }
 
     public String getTableName() {

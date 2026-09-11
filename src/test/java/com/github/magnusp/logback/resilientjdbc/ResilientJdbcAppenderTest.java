@@ -3,6 +3,7 @@ package com.github.magnusp.logback.resilientjdbc;
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.LoggerContext;
+import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.classic.spi.LoggingEvent;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -129,5 +130,123 @@ class ResilientJdbcAppenderTest {
 
         // The high priority WARN should be preserved and inserted
         assertThat(rowCount).isGreaterThanOrEqualTo(1);
+    }
+
+    @Test
+    void testPoisonPillBisectionAndChronologicalOrder() throws Exception {
+        // Custom binder where a message containing "POISON" throws SQLException to simulate constraint violation/corrupt payload
+        EventSqlBinder poisonBinder = new DefaultSqliteEventSqlBinder() {
+            @Override
+            public void bind(java.sql.PreparedStatement ps, ILoggingEvent event) throws java.sql.SQLException {
+                if (event.getMessage().contains("POISON")) {
+                    throw new java.sql.SQLException("Simulated payload constraint violation: data too long or invalid charset");
+                }
+                super.bind(ps, event);
+            }
+        };
+
+        appender.stop(); // stop default
+        appender = new ResilientJdbcAppender();
+        appender.setContext(context);
+        appender.setName("POISON_TEST_APPENDER");
+        appender.setDataSource(dataSource);
+        appender.setEventSqlBinder(poisonBinder);
+        appender.setMaxBufferSize(5);
+        appender.setFlushIntervalSeconds(1);
+        appender.setInitialDelayMs(10); // fast retry for test
+        appender.setDiscardLowPriorityOnStorm(false);
+        appender.start();
+
+        // Send 5 events: Event 0, Event 1, POISON Event 2, Event 3, Event 4
+        for (int i = 0; i < 5; i++) {
+            String msg = (i == 2) ? "POISON Event " + i : "Valid Event " + i;
+            LoggingEvent event = new LoggingEvent(
+                    "com.example.PoisonTest",
+                    logger,
+                    Level.INFO,
+                    msg,
+                    null,
+                    null
+            );
+            appender.doAppend(event);
+        }
+
+        // Wait for bisection to isolate and discard POISON event while inserting the remaining 4
+        int rowCount = 0;
+        java.util.List<String> messages = new java.util.ArrayList<>();
+        for (int retry = 0; retry < 50; retry++) {
+            Thread.sleep(100);
+            messages.clear();
+            try (Connection conn = dataSource.getConnection();
+                 Statement stmt = conn.createStatement();
+                 ResultSet rs = stmt.executeQuery("SELECT message FROM application_logs ORDER BY id ASC")) {
+                while (rs.next()) {
+                    messages.add(rs.getString("message"));
+                }
+                rowCount = messages.size();
+                if (rowCount >= 4) break;
+            } catch (Exception ignored) {}
+        }
+
+        assertThat(rowCount).isEqualTo(4);
+        assertThat(messages).containsExactly(
+                "Valid Event 0",
+                "Valid Event 1",
+                "Valid Event 3",
+                "Valid Event 4"
+        );
+        assertThat(appender.getInsertedEventsCount()).isEqualTo(4);
+        assertThat(appender.getDroppedEventsCount()).isEqualTo(1);
+    }
+
+    @Test
+    void testTransientDatabaseErrorRetriesWithoutDiscard() throws Exception {
+        java.util.concurrent.atomic.AtomicInteger failCount = new java.util.concurrent.atomic.AtomicInteger(3);
+
+        EventSqlBinder transientFailingBinder = new DefaultSqliteEventSqlBinder() {
+            @Override
+            public void bind(java.sql.PreparedStatement ps, ILoggingEvent event) throws java.sql.SQLException {
+                if (failCount.getAndDecrement() > 0) {
+                    throw new java.sql.SQLException("The database file is locked (SQLITE_BUSY)");
+                }
+                super.bind(ps, event);
+            }
+        };
+
+        appender.stop();
+        appender = new ResilientJdbcAppender();
+        appender.setContext(context);
+        appender.setName("TRANSIENT_TEST_APPENDER");
+        appender.setDataSource(dataSource);
+        appender.setEventSqlBinder(transientFailingBinder);
+        appender.setMaxBufferSize(2);
+        appender.setFlushIntervalSeconds(1);
+        appender.setInitialDelayMs(10);
+        appender.setDiscardLowPriorityOnStorm(false);
+        appender.start();
+
+        LoggingEvent event1 = new LoggingEvent("com.example.T1", logger, Level.INFO, "Transient Test 1", null, null);
+        LoggingEvent event2 = new LoggingEvent("com.example.T2", logger, Level.INFO, "Transient Test 2", null, null);
+        appender.doAppend(event1);
+        appender.doAppend(event2);
+
+        // Wait for retry recovery
+        int rowCount = 0;
+        for (int retry = 0; retry < 50; retry++) {
+            Thread.sleep(100);
+            try (Connection conn = dataSource.getConnection();
+                 Statement stmt = conn.createStatement();
+                 ResultSet rs = stmt.executeQuery("SELECT count(*) FROM application_logs WHERE message LIKE 'Transient Test%'")) {
+                if (rs.next()) {
+                    rowCount = rs.getInt(1);
+                    if (rowCount >= 2) break;
+                }
+            } catch (Exception ignored) {}
+        }
+
+        assertThat(rowCount).isEqualTo(2);
+        assertThat(appender.getInsertedEventsCount()).isEqualTo(2);
+        // None should be discarded because it was recognized as a transient error
+        assertThat(appender.getDroppedEventsCount()).isZero();
     }
 }
