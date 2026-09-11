@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1789154294619,
+  "lastUpdate": 1789154558307,
   "repoUrl": "https://github.com/magnusp/logback-single-writer-jdbc-appender",
   "entries": {
     "JMH Benchmarks (SQLite Appender)": [
@@ -388,6 +388,54 @@ window.BENCHMARK_DATA = {
           {
             "name": "com.github.magnusp.logback.resilientjdbc.ResilientJdbcAppenderBenchmark.sqliteRelationalBatchOf500",
             "value": 323579.81412611017,
+            "unit": "ops/s",
+            "extra": "iterations: 3\nforks: 1\nthreads: 1"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "1431685+magnusp@users.noreply.github.com",
+            "name": "Magnus Persson",
+            "username": "magnusp"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "5ce3d9ab49179d014b715f2959127a9009333d2d",
+          "message": "build: configure Maven CI-friendly versions and release profile (#23)",
+          "timestamp": "2026-09-11T21:21:26+02:00",
+          "tree_id": "4bca56e066c1b4ca6a62abb04fe0cc0e56432813",
+          "url": "https://github.com/magnusp/logback-single-writer-jdbc-appender/commit/5ce3d9ab49179d014b715f2959127a9009333d2d"
+        },
+        "date": 1789154557687,
+        "tool": "jmh",
+        "benches": [
+          {
+            "name": "com.github.magnusp.logback.resilientjdbc.ResilientJdbcAppenderBenchmark.sqliteJsonBatchOf100",
+            "value": 161637.12119503363,
+            "unit": "ops/s",
+            "extra": "iterations: 3\nforks: 1\nthreads: 1"
+          },
+          {
+            "name": "com.github.magnusp.logback.resilientjdbc.ResilientJdbcAppenderBenchmark.sqliteJsonBatchOf500",
+            "value": 155224.51438034532,
+            "unit": "ops/s",
+            "extra": "iterations: 3\nforks: 1\nthreads: 1"
+          },
+          {
+            "name": "com.github.magnusp.logback.resilientjdbc.ResilientJdbcAppenderBenchmark.sqliteRelationalBatchOf100",
+            "value": 178373.0389395243,
+            "unit": "ops/s",
+            "extra": "iterations: 3\nforks: 1\nthreads: 1"
+          },
+          {
+            "name": "com.github.magnusp.logback.resilientjdbc.ResilientJdbcAppenderBenchmark.sqliteRelationalBatchOf500",
+            "value": 216513.02144312393,
             "unit": "ops/s",
             "extra": "iterations: 3\nforks: 1\nthreads: 1"
           }
