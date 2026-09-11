@@ -12,18 +12,18 @@ import java.sql.Types;
 import java.util.Map;
 
 /**
- * Default binder implementation tailored for Turso / SQLite and relational JDBC databases.
+ * Default binder implementation tailored for SQLite and single-writer relational JDBC databases.
  * Stores logs in a table with columns:
  * (timestamp, level, logger_name, thread_name, message, exception, mdc)
  */
-public class DefaultTursoEventSqlBinder implements EventSqlBinder {
+public class DefaultSqliteEventSqlBinder implements EventSqlBinder {
 
     private String tableName = "application_logs";
     private boolean autoCreateTable = true;
 
-    public DefaultTursoEventSqlBinder() {}
+    public DefaultSqliteEventSqlBinder() {}
 
-    public DefaultTursoEventSqlBinder(String tableName) {
+    public DefaultSqliteEventSqlBinder(String tableName) {
         this.tableName = tableName;
     }
 

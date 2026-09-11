@@ -25,6 +25,6 @@ body:
     id: environment
     attributes:
       label: Environment
-      description: JVM version (e.g. Amazon Corretto 25), OS, Turso/SQLite version, Spring Boot version.
+      description: JVM version (e.g. Amazon Corretto 25), OS, SQLite version, Spring Boot version.
     validations:
       required: true
