@@ -54,6 +54,7 @@ jobs:
           auto-push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
           comment-always: true
           comment-on-alert: true
+          alert-mode: 'larger-is-better'
           alert-threshold: '150%'
           fail-on-alert: false
           summary-always: true

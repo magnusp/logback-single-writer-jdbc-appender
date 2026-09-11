@@ -99,14 +99,15 @@ public class ResilientJdbcAppender extends AppenderBase<ILoggingEvent> {
     protected void append(ILoggingEvent eventObject) {
         if (!isStarted()) return;
 
-        // 1. Prepare event for deferred processing across threads (caller data, MDC, etc.)
-        eventObject.prepareForDeferredProcessing();
-
-        // 2. Drop low-priority logs during a network / database outage to preserve queue capacity
+        // 1. Drop low-priority logs early during a retry storm to preserve both queue capacity and heap memory
+        // (avoids materializing heavy stack traces and MDC strings via prepareForDeferredProcessing)
         if (discardLowPriorityOnStorm && isInRetryStorm.get() && isLowPriority(eventObject)) {
             droppedEventsCount.incrementAndGet();
             return;
         }
+
+        // 2. Prepare event for deferred processing across threads (caller data, MDC, etc.)
+        eventObject.prepareForDeferredProcessing();
 
         // 3. Offer to bounded queue; if full, drop to prevent blocking application threads
         if (!buffer.offer(eventObject)) {
@@ -168,14 +169,17 @@ public class ResilientJdbcAppender extends AppenderBase<ILoggingEvent> {
      *         or the appender was stopped.
      */
     private boolean sendWithRetry(List<ILoggingEvent> batch) {
-        return sendBatch(batch, false);
+        return sendBatch(batch, false, 0);
     }
+
+    private static final int MAX_BISECTION_DEPTH = 6; // max recursion depth (100 -> 50 -> 25 -> 12 -> 6 -> 3 -> 1)
 
     /**
      * Recursive bisecting send. {@code isBisectedSingle} is {@code true} when the batch has
      * already been reduced to a single event; on failure it is silently discarded.
+     * {@code depth} tracks recursive bisection depth to avoid exhaustive iteration on batch-wide failures.
      */
-    private boolean sendBatch(List<ILoggingEvent> batch, boolean isBisectedSingle) {
+    private boolean sendBatch(List<ILoggingEvent> batch, boolean isBisectedSingle, int depth) {
         while (isStarted() && !batch.isEmpty()) {
             DataSource ds = resolveDataSource();
             if (ds == null) {
@@ -238,9 +242,9 @@ public class ResilientJdbcAppender extends AppenderBase<ILoggingEvent> {
                     return false;
                 }
 
-                // Distinguish transient connection/pool/database errors (e.g. database locked/busy, connection refused)
-                // vs data/payload errors (e.g. data too long, constraint violation, malformed data).
-                // Transient database/connection errors affect the whole database and should back off without discarding.
+                // Distinguish transient connection/pool/database errors (e.g. database locked/busy, connection refused,
+                // disk full, IO error, read-only filesystem) vs data/payload errors (constraint violation, malformed data).
+                // Transient database/infrastructure errors affect the whole database and should back off without discarding.
                 boolean isTransientError = isTransientDatabaseError(e);
 
                 if (isTransientError) {
@@ -251,58 +255,68 @@ public class ResilientJdbcAppender extends AppenderBase<ILoggingEvent> {
                     continue; // retry the same batch
                 }
 
-            if (isBisectedSingle) {
-                // This is already a single isolated event that failed twice — discard it as a poison pill
-                droppedEventsCount.incrementAndGet();
-                logThrottledWarn("Discarding unwritable log event after bisection: logger=" +
-                        batch.get(0).getLoggerName() + " msg=" + batch.get(0).getMessage() +
-                        " error=" + e.getMessage());
-                return isStarted(); // keep flush loop alive; event is discarded
-            }
-
-            if (batch.size() == 1) {
-                // Single event failed for the first time — attempt one transient backoff,
-                // then discard if it still fails on the recursive call
-                logThrottledWarn("Single-event write failed, backing off before discard attempt: " + e.getMessage());
-                if (!handleBackoffSilent()) {
-                    return false; // interrupted
+                if (isBisectedSingle) {
+                    // This is already a single isolated event that failed twice — discard it as a poison pill
+                    droppedEventsCount.incrementAndGet();
+                    logThrottledWarn("Discarding unwritable log event after bisection: logger=" +
+                            batch.get(0).getLoggerName() + " msg=" + batch.get(0).getMessage() +
+                            " error=" + e.getMessage());
+                    return isStarted(); // keep flush loop alive; event is discarded
                 }
-                return sendBatch(batch, true);
-            }
 
-            // Multi-event payload failure: bisect and retry each half in order
-            logThrottledWarn("Batch of " + batch.size() + " failed, bisecting: " + e.getMessage());
-            int mid = batch.size() / 2;
-            List<ILoggingEvent> first = new ArrayList<>(batch.subList(0, mid));
-            List<ILoggingEvent> second = new ArrayList<>(batch.subList(mid, batch.size()));
+                if (batch.size() == 1) {
+                    // Single event failed for the first time — attempt one transient backoff,
+                    // then discard if it still fails on the recursive call
+                    logThrottledWarn("Single-event write failed, backing off before discard attempt: " + e.getMessage());
+                    if (!handleBackoffSilent()) {
+                        return false; // interrupted
+                    }
+                    return sendBatch(batch, true, depth);
+                }
 
-            // Apply storm filter to each half before recursing
-            if (discardLowPriorityOnStorm && isInRetryStorm.get()) {
-                int before = first.size();
-                first.removeIf(this::isLowPriority);
-                droppedEventsCount.addAndGet(before - first.size());
-                before = second.size();
-                second.removeIf(this::isLowPriority);
-                droppedEventsCount.addAndGet(before - second.size());
-            }
+                // If bisection depth exceeded, entire sub-batch is systematically invalid (e.g. invalid table schema or corrupt batch)
+                // Discard the sub-batch instead of exhaustively testing every single element and hanging flusher for minutes
+                if (depth >= MAX_BISECTION_DEPTH) {
+                    droppedEventsCount.addAndGet(batch.size());
+                    logThrottledWarn("Exceeded max bisection depth (" + MAX_BISECTION_DEPTH + "); discarding uninsertable sub-batch of " +
+                            batch.size() + " events to prevent thread starvation: " + e.getMessage());
+                    return isStarted();
+                }
 
-            // First half — if interrupted, abort the whole flush cycle
-            if (!first.isEmpty() && !sendBatch(first, false)) {
-                return false;
+                // Multi-event payload failure: bisect and retry each half in order
+                logThrottledWarn("Batch of " + batch.size() + " failed, bisecting: " + e.getMessage());
+                int mid = batch.size() / 2;
+                List<ILoggingEvent> first = new ArrayList<>(batch.subList(0, mid));
+                List<ILoggingEvent> second = new ArrayList<>(batch.subList(mid, batch.size()));
+
+                // Apply storm filter to each half before recursing
+                if (discardLowPriorityOnStorm && isInRetryStorm.get()) {
+                    int before = first.size();
+                    first.removeIf(this::isLowPriority);
+                    droppedEventsCount.addAndGet(before - first.size());
+                    before = second.size();
+                    second.removeIf(this::isLowPriority);
+                    droppedEventsCount.addAndGet(before - second.size());
+                }
+
+                // First half — if interrupted, abort the whole flush cycle
+                if (!first.isEmpty() && !sendBatch(first, false, depth + 1)) {
+                    return false;
+                }
+                // Second half
+                if (!second.isEmpty() && !sendBatch(second, false, depth + 1)) {
+                    return false;
+                }
+                return isStarted();
             }
-            // Second half
-            if (!second.isEmpty() && !sendBatch(second, false)) {
-                return false;
-            }
-            return isStarted();
-        }
         }
         return false;
     }
 
     /**
      * Determines if an exception represents a transient database or connectivity failure
-     * (e.g., locked database, busy handler, connection unavailable) where events should NOT be discarded.
+     * (e.g., locked database, busy handler, connection unavailable, disk full, I/O error)
+     * where events should NOT be discarded.
      */
     private boolean isTransientDatabaseError(Throwable t) {
         Throwable curr = t;
@@ -313,7 +327,12 @@ public class ResilientJdbcAppender extends AppenderBase<ILoggingEvent> {
                 if (lower.contains("busy") || lower.contains("locked") ||
                     lower.contains("connection") || lower.contains("timeout") ||
                     lower.contains("pool") || lower.contains("io error") ||
-                    lower.contains("sqlite_busy") || lower.contains("sqlite_locked")) {
+                    lower.contains("ioerr") || lower.contains("full") ||
+                    lower.contains("disk") || lower.contains("space") ||
+                    lower.contains("readonly") || lower.contains("read-only") ||
+                    lower.contains("sqlite_busy") || lower.contains("sqlite_locked") ||
+                    lower.contains("sqlite_full") || lower.contains("sqlite_ioerr") ||
+                    lower.contains("sqlite_readonly") || lower.contains("sqlite_cantopen")) {
                     return true;
                 }
             }
