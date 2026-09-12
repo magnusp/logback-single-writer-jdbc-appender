@@ -18,7 +18,38 @@ A resilient, single-background-writer JDBC appender for [Logback](https://logbac
 
 ## Getting Started
 
-### 1. Register DataSource in Spring Boot (or Application Entry)
+You can configure the database connection either:
+1. **Directly in `logback.xml`** using `<dataSource>` (no Spring, DI framework, or programmatic code required).
+2. **Programmatically via `DataSourceRegistry`** (recommended when sharing an existing Spring Boot or CDI `DataSource`).
+
+### Option A: Standalone XML Configuration (No Programmatic Setup)
+
+Use `<dataSource>` inside `<appender>`. Standard properties include `<driverClass>`, `<url>`, `<user>`, and `<password>`. The default implementation is [`DriverManagerDataSource`](file:///home/magnus/src/github.com/magnusp/logback-single-writer-jdbc-appender/src/main/java/com/github/magnusp/logback/resilientjdbc/DriverManagerDataSource.java).
+
+```xml
+<configuration>
+    <appender name="RESILIENT_JDBC" class="com.github.magnusp.logback.resilientjdbc.ResilientJdbcAppender">
+        <dataSource>
+            <driverClass>org.sqlite.JDBC</driverClass>
+            <url>jdbc:sqlite:/var/log/myapp.db</url>
+        </dataSource>
+        <maxBufferSize>100</maxBufferSize>
+        <flushIntervalSeconds>5</flushIntervalSeconds>
+        <queueCapacity>10000</queueCapacity>
+        <discardLowPriorityOnStorm>true</discardLowPriorityOnStorm>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="RESILIENT_JDBC" />
+    </root>
+</configuration>
+```
+
+You can also specify a custom `DataSource` class via `<dataSource class="com.zaxxer.hikari.HikariDataSource">` or similar.
+
+### Option B: Register DataSource via Spring Boot (or Application Entry)
+
+#### 1. Register DataSource in Java
 
 ```java
 import com.github.magnusp.logback.resilientjdbc.DataSourceRegistry;
@@ -43,9 +74,9 @@ public class LoggingDataSourceConfig {
 }
 ```
 
-### 2. Configure `logback.xml`
+#### 2. Configure `logback.xml`
 
-#### Standard Relational Table
+##### Standard Relational Table
 ```xml
 <configuration>
     <appender name="RESILIENT_JDBC" class="com.github.magnusp.logback.resilientjdbc.ResilientJdbcAppender">
@@ -62,7 +93,7 @@ public class LoggingDataSourceConfig {
 </configuration>
 ```
 
-#### JSON Column Schema (SQLite / LibSQL JSON1)
+##### JSON Column Schema (SQLite / LibSQL JSON1)
 ```xml
 <configuration>
     <appender name="RESILIENT_JSON_JDBC" class="com.github.magnusp.logback.resilientjdbc.ResilientJdbcAppender">

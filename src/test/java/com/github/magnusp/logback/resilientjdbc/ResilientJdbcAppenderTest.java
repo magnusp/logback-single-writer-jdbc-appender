@@ -249,4 +249,100 @@ class ResilientJdbcAppenderTest {
         // None should be discarded because it was recognized as a transient error
         assertThat(appender.getDroppedEventsCount()).isZero();
     }
+
+    @Test
+    void testXmlConfigurationWithNestedDriverManagerDataSource() throws Exception {
+        Path dbFile = tempDir.resolve("xml_configured.db");
+        String xmlConfig =
+                "<configuration>\n" +
+                "    <appender name=\"XML_JDBC\" class=\"com.github.magnusp.logback.resilientjdbc.ResilientJdbcAppender\">\n" +
+                "        <dataSource class=\"com.github.magnusp.logback.resilientjdbc.DriverManagerDataSource\">\n" +
+                "            <driverClass>org.sqlite.JDBC</driverClass>\n" +
+                "            <url>jdbc:sqlite:" + dbFile.toAbsolutePath() + "</url>\n" +
+                "        </dataSource>\n" +
+                "        <maxBufferSize>1</maxBufferSize>\n" +
+                "        <flushIntervalSeconds>1</flushIntervalSeconds>\n" +
+                "    </appender>\n" +
+                "    <root level=\"INFO\">\n" +
+                "        <appender-ref ref=\"XML_JDBC\" />\n" +
+                "    </root>\n" +
+                "</configuration>";
+
+        context.reset();
+        ch.qos.logback.classic.joran.JoranConfigurator configurator = new ch.qos.logback.classic.joran.JoranConfigurator();
+        configurator.setContext(context);
+        configurator.doConfigure(new java.io.ByteArrayInputStream(xmlConfig.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+
+        ch.qos.logback.classic.Logger rootLogger = context.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME);
+        ResilientJdbcAppender xmlAppender = (ResilientJdbcAppender) rootLogger.getAppender("XML_JDBC");
+        assertThat(xmlAppender).isNotNull();
+        assertThat(xmlAppender.isStarted()).isTrue();
+        assertThat(xmlAppender.getDataSource()).isInstanceOf(DriverManagerDataSource.class);
+
+        rootLogger.info("Log message via XML configured appender");
+
+        int rowCount = 0;
+        for (int retry = 0; retry < 50; retry++) {
+            Thread.sleep(100);
+            try (Connection conn = xmlAppender.getDataSource().getConnection();
+                 Statement stmt = conn.createStatement();
+                 ResultSet rs = stmt.executeQuery("SELECT count(*) FROM application_logs")) {
+                if (rs.next()) {
+                    rowCount = rs.getInt(1);
+                    if (rowCount >= 1) break;
+                }
+            } catch (Exception ignored) {}
+        }
+
+        assertThat(rowCount).isEqualTo(1);
+        xmlAppender.stop();
+    }
+
+    @Test
+    void testXmlConfigurationWithDefaultClassForDataSource() throws Exception {
+        Path dbFile = tempDir.resolve("xml_default_class.db");
+        String xmlConfig =
+                "<configuration>\n" +
+                "    <appender name=\"DEFAULT_CLASS_JDBC\" class=\"com.github.magnusp.logback.resilientjdbc.ResilientJdbcAppender\">\n" +
+                "        <dataSource>\n" +
+                "            <driverClass>org.sqlite.JDBC</driverClass>\n" +
+                "            <url>jdbc:sqlite:" + dbFile.toAbsolutePath() + "</url>\n" +
+                "        </dataSource>\n" +
+                "        <maxBufferSize>1</maxBufferSize>\n" +
+                "        <flushIntervalSeconds>1</flushIntervalSeconds>\n" +
+                "    </appender>\n" +
+                "    <root level=\"INFO\">\n" +
+                "        <appender-ref ref=\"DEFAULT_CLASS_JDBC\" />\n" +
+                "    </root>\n" +
+                "</configuration>";
+
+        context.reset();
+        ch.qos.logback.classic.joran.JoranConfigurator configurator = new ch.qos.logback.classic.joran.JoranConfigurator();
+        configurator.setContext(context);
+        configurator.doConfigure(new java.io.ByteArrayInputStream(xmlConfig.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+
+        ch.qos.logback.classic.Logger rootLogger = context.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME);
+        ResilientJdbcAppender xmlAppender = (ResilientJdbcAppender) rootLogger.getAppender("DEFAULT_CLASS_JDBC");
+        assertThat(xmlAppender).isNotNull();
+        assertThat(xmlAppender.isStarted()).isTrue();
+        assertThat(xmlAppender.getDataSource()).isInstanceOf(DriverManagerDataSource.class);
+
+        rootLogger.info("Log message via default-class XML appender");
+
+        int rowCount = 0;
+        for (int retry = 0; retry < 50; retry++) {
+            Thread.sleep(100);
+            try (Connection conn = xmlAppender.getDataSource().getConnection();
+                 Statement stmt = conn.createStatement();
+                 ResultSet rs = stmt.executeQuery("SELECT count(*) FROM application_logs")) {
+                if (rs.next()) {
+                    rowCount = rs.getInt(1);
+                    if (rowCount >= 1) break;
+                }
+            } catch (Exception ignored) {}
+        }
+
+        assertThat(rowCount).isEqualTo(1);
+        xmlAppender.stop();
+    }
 }
