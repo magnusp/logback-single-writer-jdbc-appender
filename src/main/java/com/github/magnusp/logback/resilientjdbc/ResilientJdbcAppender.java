@@ -3,6 +3,8 @@ package com.github.magnusp.logback.resilientjdbc;
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.AppenderBase;
+import ch.qos.logback.core.joran.spi.DefaultClass;
+import ch.qos.logback.core.spi.LifeCycle;
 
 import javax.sql.DataSource;
 import java.sql.Connection;
@@ -67,6 +69,11 @@ public class ResilientJdbcAppender extends AppenderBase<ILoggingEvent> {
 
         buffer = new ArrayBlockingQueue<>(queueCapacity);
         currentDelayMs = initialDelayMs;
+
+        // Start DataSource if it implements LifeCycle and has not been started
+        if (dataSource instanceof LifeCycle lifeCycleDs && !lifeCycleDs.isStarted()) {
+            lifeCycleDs.start();
+        }
 
         // Instantiate EventSqlBinder if configured or default
         if (eventSqlBinder == null) {
@@ -185,7 +192,10 @@ public class ResilientJdbcAppender extends AppenderBase<ILoggingEvent> {
             if (ds == null) {
                 isInRetryStorm.set(true);
                 // No bisection for missing DataSource — back off and retry the whole batch
-                if (!handleBackoff(batch, "DataSource not available yet for: " + dataSourceName)) {
+                String missingMsg = dataSourceName != null ?
+                        "DataSource not available yet for: " + dataSourceName :
+                        "DataSource not configured or available yet";
+                if (!handleBackoff(batch, missingMsg)) {
                     return false;
                 }
                 continue;
@@ -453,6 +463,11 @@ public class ResilientJdbcAppender extends AppenderBase<ILoggingEvent> {
         } else {
             addWarn("Background flusher still active at shutdown deadline; skipping final flush to preserve single-writer invariant.");
         }
+
+        // Stop configured DataSource if it implements LifeCycle
+        if (dataSource instanceof LifeCycle lifeCycleDs && lifeCycleDs.isStarted()) {
+            lifeCycleDs.stop();
+        }
     }
 
     private void downstreamFlushOnShutdown() {
@@ -502,6 +517,8 @@ public class ResilientJdbcAppender extends AppenderBase<ILoggingEvent> {
     public void setDataSourceName(String dataSourceName) { this.dataSourceName = dataSourceName; }
 
     public DataSource getDataSource() { return dataSource; }
+
+    @DefaultClass(DriverManagerDataSource.class)
     public void setDataSource(DataSource dataSource) { this.dataSource = dataSource; }
 
     public EventSqlBinder getEventSqlBinder() { return eventSqlBinder; }
