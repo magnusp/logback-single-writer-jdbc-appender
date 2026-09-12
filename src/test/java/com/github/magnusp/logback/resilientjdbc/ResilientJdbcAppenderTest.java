@@ -345,4 +345,47 @@ class ResilientJdbcAppenderTest {
         assertThat(rowCount).isEqualTo(1);
         xmlAppender.stop();
     }
+
+    @Test
+    void testXmlConfigurationWithVariableInterpolation() throws Exception {
+        Path dbFile = tempDir.resolve("interpolated.db");
+        System.setProperty("TEST_DB_PATH", dbFile.toAbsolutePath().toString());
+        System.setProperty("TEST_AUTH_TOKEN", "secret-token-123");
+
+        try {
+            String xmlConfig =
+                    "<configuration>\n" +
+                    "    <appender name=\"INTERPOLATED_JDBC\" class=\"com.github.magnusp.logback.resilientjdbc.ResilientJdbcAppender\">\n" +
+                    "        <dataSource>\n" +
+                    "            <driverClass>org.sqlite.JDBC</driverClass>\n" +
+                    "            <url>jdbc:sqlite:${TEST_DB_PATH}?authToken=${TEST_AUTH_TOKEN}</url>\n" +
+                    "            <password>${TEST_AUTH_TOKEN}</password>\n" +
+                    "        </dataSource>\n" +
+                    "        <maxBufferSize>1</maxBufferSize>\n" +
+                    "        <flushIntervalSeconds>1</flushIntervalSeconds>\n" +
+                    "    </appender>\n" +
+                    "    <root level=\"INFO\">\n" +
+                    "        <appender-ref ref=\"INTERPOLATED_JDBC\" />\n" +
+                    "    </root>\n" +
+                    "</configuration>";
+
+            context.reset();
+            ch.qos.logback.classic.joran.JoranConfigurator configurator = new ch.qos.logback.classic.joran.JoranConfigurator();
+            configurator.setContext(context);
+            configurator.doConfigure(new java.io.ByteArrayInputStream(xmlConfig.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+
+            ch.qos.logback.classic.Logger rootLogger = context.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME);
+            ResilientJdbcAppender xmlAppender = (ResilientJdbcAppender) rootLogger.getAppender("INTERPOLATED_JDBC");
+            assertThat(xmlAppender).isNotNull();
+
+            DriverManagerDataSource ds = (DriverManagerDataSource) xmlAppender.getDataSource();
+            assertThat(ds.getUrl()).isEqualTo("jdbc:sqlite:" + dbFile.toAbsolutePath() + "?authToken=secret-token-123");
+            assertThat(ds.getPassword()).isEqualTo("secret-token-123");
+
+            xmlAppender.stop();
+        } finally {
+            System.clearProperty("TEST_DB_PATH");
+            System.clearProperty("TEST_AUTH_TOKEN");
+        }
+    }
 }
