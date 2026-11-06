@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1789235809918,
+  "lastUpdate": 1793998783746,
   "repoUrl": "https://github.com/magnusp/logback-single-writer-jdbc-appender",
   "entries": {
     "JMH Benchmarks (SQLite Appender)": [
@@ -676,6 +676,54 @@ window.BENCHMARK_DATA = {
           {
             "name": "com.github.magnusp.logback.resilientjdbc.ResilientJdbcAppenderBenchmark.sqliteRelationalBatchOf500",
             "value": 175041.5095099865,
+            "unit": "ops/s",
+            "extra": "iterations: 3\nforks: 1\nthreads: 1"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "97af33e2a35bbaaf13933bb9302c59cc8210ed51",
+          "message": "build(deps): bump actions/setup-java from 5 to 6 (#26)\n\nBumps [actions/setup-java](https://github.com/actions/setup-java) from 5 to 6.\n- [Release notes](https://github.com/actions/setup-java/releases)\n- [Commits](https://github.com/actions/setup-java/compare/v5...v6)\n\n---\nupdated-dependencies:\n- dependency-name: actions/setup-java\n  dependency-version: '6'\n  dependency-type: direct:production\n  update-type: version-update:semver-major\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+          "timestamp": "2026-11-06T21:58:30+01:00",
+          "tree_id": "c490954f1d5a0a18b1b30d1fa12a48158052b13b",
+          "url": "https://github.com/magnusp/logback-single-writer-jdbc-appender/commit/97af33e2a35bbaaf13933bb9302c59cc8210ed51"
+        },
+        "date": 1793998783125,
+        "tool": "jmh",
+        "benches": [
+          {
+            "name": "com.github.magnusp.logback.resilientjdbc.ResilientJdbcAppenderBenchmark.sqliteJsonBatchOf100",
+            "value": 266310.37881250394,
+            "unit": "ops/s",
+            "extra": "iterations: 3\nforks: 1\nthreads: 1"
+          },
+          {
+            "name": "com.github.magnusp.logback.resilientjdbc.ResilientJdbcAppenderBenchmark.sqliteJsonBatchOf500",
+            "value": 261937.60133588818,
+            "unit": "ops/s",
+            "extra": "iterations: 3\nforks: 1\nthreads: 1"
+          },
+          {
+            "name": "com.github.magnusp.logback.resilientjdbc.ResilientJdbcAppenderBenchmark.sqliteRelationalBatchOf100",
+            "value": 293654.901321876,
+            "unit": "ops/s",
+            "extra": "iterations: 3\nforks: 1\nthreads: 1"
+          },
+          {
+            "name": "com.github.magnusp.logback.resilientjdbc.ResilientJdbcAppenderBenchmark.sqliteRelationalBatchOf500",
+            "value": 343927.02422826324,
             "unit": "ops/s",
             "extra": "iterations: 3\nforks: 1\nthreads: 1"
           }
